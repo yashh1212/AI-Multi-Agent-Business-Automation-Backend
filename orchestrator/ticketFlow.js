@@ -1,6 +1,6 @@
-import { classifyQuery } from "../agents/classifierAgent.js";
+import { classifyQuery } from "../agents/support/classifierAgent.js";
 import { createJiraTicket } from "../integrations/jira.js";
-import { notifySlack } from "../agents/slackAgent.js";
+import { notifySlack } from "../agents/support/slackAgent.js";
 import { replyToEmail, markAsRead } from "../services/gmailService.js";
 
 export async function handleClientQuery(message) {

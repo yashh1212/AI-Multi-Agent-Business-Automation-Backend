@@ -1,4 +1,4 @@
-import { sendTicketNotification } from "../integrations/slack.js";
+import { sendTicketNotification } from "../../integrations/slack.js";
 
 export async function notifySlack(ticket, classification) {
   try {

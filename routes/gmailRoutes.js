@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const gmail = require("../services/gmailService");
-const { emailAgent } = require("../agents/emailAgent");
+const { emailAgent } = require("../agents/support/emailAgent");
 
 
 // GET EMAILS

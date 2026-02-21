@@ -1,5 +1,5 @@
-import { getUnreadEmails } from "../services/gmailService.js";
-import { handleEmailFlow } from "../orchestrator/ticketFlow.js";
+import { getUnreadEmails } from "../../services/gmailService.js";
+import { handleEmailFlow } from "../../orchestrator/ticketFlow.js";
 
 // ✅ Track already processed emails in memory
 const processedEmailIds = new Set();
