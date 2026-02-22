@@ -1,17 +1,20 @@
 import express from "express";
+import cors from "cors";
 import dotenv from "dotenv";
 
 import { handleClientQuery } from "./orchestrator/ticketFlow.js";
 import { startEmailAgent } from "./agents/support/emailAgent.js";
-import  hrRoutes  from "./routes/hrRoutes.js";
-
+import hrRoutes from "./routes/hrRoutes.js";
+import atsRoutes from "./routes/atsRoutes.js";
 
 dotenv.config();
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 startEmailAgent();
 app.use("/hr", hrRoutes);
+app.use("/ats", atsRoutes);
 
 app.post("/api/client-query", async (req, res) => {
   try {

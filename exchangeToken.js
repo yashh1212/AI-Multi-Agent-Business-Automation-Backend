@@ -8,7 +8,8 @@ const oauth2Client = new google.auth.OAuth2(
   "http://localhost:5000/auth/callback"
 );
 
-const code = "4/0AfrIepDIQoef1qnn8uuRxt8XWdbEwubtbMenRpcIE2yPi9K6ZIyyCL8m8mVA5cvIihZ8xg"; // ← paste here
+const code = "4/0AfrIepCX2qmvWu7UToq0wdD9r1dRTrxYUFJnfEdU9Zw9vFBG-MpF7G8szOqbzDOHdPe-0A"; // ← paste here
 
 const { tokens } = await oauth2Client.getToken(code);
 console.log("✅ Refresh Token:", tokens.refresh_token);
+console.log("✅ Scopes:", tokens.scope); 
