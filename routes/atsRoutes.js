@@ -5,6 +5,7 @@ const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
 import { screenResume } from "../agents/hr/resumeScreenerAgent.js";
 import { calculateATSScore, getSupportedRoles } from "../utils/atsScoreCalculator.js";
+import Candidate from "../models/Candidate.js";
 
 const router = express.Router();
 const upload = multer({
@@ -65,6 +66,25 @@ router.post("/score", upload.single("resume"), async (req, res) => {
 
     const result = await screenResume(resumeText, jobRole, { jobDescription });
 
+    // Save to DB (fire-and-forget)
+    Candidate.create({
+      candidateName: req.body.candidateName || "Unknown",
+      email: req.body.email,
+      jobRole,
+      score: result.score,
+      decision: result.decision,
+      scoringMethod: result.scoring_method || "hybrid",
+      source: "ats_score",
+      atsBreakdown: result.ats_breakdown,
+      strengths: result.strengths,
+      weaknesses: result.weaknesses,
+      recommendations: result.recommendations,
+      keySkills: result.key_skills,
+      missingSkills: result.missing_skills,
+      summary: result.summary,
+      rawResult: result,
+    }).catch((e) => console.error("DB save error:", e.message));
+
     res.json({
       success: true,
       data: {
@@ -101,6 +121,23 @@ router.post("/quick-score", upload.single("resume"), async (req, res) => {
     }
 
     const result = calculateATSScore(resumeText, jobRole, { jobDescription });
+
+    // Save to DB (fire-and-forget)
+    Candidate.create({
+      candidateName: req.body.candidateName || "Unknown",
+      email: req.body.email,
+      jobRole,
+      score: result.overallScore,
+      decision: result.decision,
+      scoringMethod: "quick_score",
+      source: "ats_quick_score",
+      atsBreakdown: result.breakdown,
+      recommendations: result.recommendations,
+      keySkills: result.breakdown?.skills?.matchedSkills,
+      missingSkills: result.breakdown?.skills?.missingSkills,
+      summary: `Quick ATS Score: ${result.overallScore}/100 — ${result.decision}`,
+      rawResult: result,
+    }).catch((e) => console.error("DB save error:", e.message));
 
     res.json({
       success: true,
@@ -172,6 +209,27 @@ router.post("/batch-score", async (req, res) => {
 
     const errors = results.filter((r) => r.error);
 
+    // Save each scored resume to DB (fire-and-forget)
+    const docsToSave = ranked.map((r) => ({
+      candidateName: r.name,
+      jobRole,
+      score: r.overallScore,
+      decision: r.decision,
+      scoringMethod: "quick_score",
+      source: "ats_batch",
+      atsBreakdown: r.breakdown,
+      recommendations: r.recommendations,
+      keySkills: r.breakdown?.skills?.matchedSkills,
+      missingSkills: r.breakdown?.skills?.missingSkills,
+      summary: `Batch ATS Score: ${r.overallScore}/100 — ${r.decision}`,
+      rawResult: r,
+    }));
+    if (docsToSave.length > 0) {
+      Candidate.insertMany(docsToSave).catch((e) =>
+        console.error("DB batch save error:", e.message)
+      );
+    }
+
     res.json({
       success: true,
       data: {
@@ -189,6 +247,46 @@ router.post("/batch-score", async (req, res) => {
     });
   } catch (err) {
     console.error("Batch Score Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /ats/history — Retrieve all candidate screening history ────────────────
+
+router.get("/history", async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.role) filter.jobRole = req.query.role.toLowerCase();
+    if (req.query.decision) filter.decision = req.query.decision.toLowerCase();
+    if (req.query.source) filter.source = req.query.source;
+
+    const candidates = await Candidate.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(req.query.limit) || 100)
+      .lean();
+
+    res.json({
+      success: true,
+      count: candidates.length,
+      data: candidates,
+    });
+  } catch (err) {
+    console.error("History Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /ats/history/:id — Retrieve a single candidate record ──────────────────
+
+router.get("/history/:id", async (req, res) => {
+  try {
+    const candidate = await Candidate.findById(req.params.id).lean();
+    if (!candidate) {
+      return res.status(404).json({ success: false, error: "Candidate not found" });
+    }
+    res.json({ success: true, data: candidate });
+  } catch (err) {
+    console.error("History Lookup Error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

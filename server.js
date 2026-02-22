@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 
 import { handleClientQuery } from "./orchestrator/ticketFlow.js";
 import { startEmailAgent } from "./agents/support/emailAgent.js";
+import { connectDB } from "./config/db.js";
 import hrRoutes from "./routes/hrRoutes.js";
 import atsRoutes from "./routes/atsRoutes.js";
 
@@ -38,6 +39,9 @@ app.post("/api/client-query", async (req, res) => {
   }
 });
 
-app.listen(process.env.PORT, () => {
-  console.log(`Server running on ${process.env.PORT}`);
+// Connect to MongoDB, then start the server
+connectDB().then(() => {
+  app.listen(process.env.PORT, () => {
+    console.log(`Server running on ${process.env.PORT}`);
+  });
 });
