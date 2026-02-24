@@ -7,6 +7,7 @@ import { startEmailAgent } from "./agents/support/emailAgent.js";
 import { connectDB } from "./config/db.js";
 import hrRoutes from "./routes/hrRoutes.js";
 import atsRoutes from "./routes/atsRoutes.js";
+import salesRoutes from "./routes/salesRoutes.js";
 
 dotenv.config();
 
@@ -16,6 +17,7 @@ app.use(express.json());
 startEmailAgent();
 app.use("/hr", hrRoutes);
 app.use("/ats", atsRoutes);
+app.use("/sales", salesRoutes);
 
 app.post("/api/client-query", async (req, res) => {
   try {

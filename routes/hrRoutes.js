@@ -15,7 +15,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 // STAGE 1: Apply & screen resume
 router.post("/apply", upload.single("resume"), async (req, res) => {
   try {
-    const { name, email, role, salary, startDate } = req.body;
+    const { name, email, role, salary, startDate, phone, location, experience, education, notes } = req.body;
 
     if (!name || !email || !role) {
       return res.status(400).json({ error: "name, email, role are required" });
@@ -49,14 +49,14 @@ router.post("/apply", upload.single("resume"), async (req, res) => {
       source: "hr_apply",
       summary: result.summary || `Applied for ${role}`,
       rawResult: result,
-      phone: req.body.phone || null,
+      phone: phone || null,
       position: role.trim(),
-      location: req.body.location || null,
-      experience: req.body.experience || null,
-      education: req.body.education || null,
+      location: location || null,
+      experience: experience || null,
+      education: education || null,
       resumeScore: result.score ?? result.atsScore ?? null,
       status: "applied",
-      notes: req.body.notes || null,
+      notes: notes || null,
     }).catch((e) => console.error("DB save error:", e.message));
 
     // Log activity
@@ -77,7 +77,7 @@ router.post("/apply", upload.single("resume"), async (req, res) => {
 // STAGE 2: Schedule interview (after screening passed)
 router.post("/schedule-interview", async (req, res) => {
   try {
-    const { name, email, role } = req.body;
+    const { name, email, role, phone, location, experience, education, notes, interviewDate, meetLink } = req.body;
 
     if (!name || !email || !role) {
       return res.status(400).json({ error: "name, email, role are required" });
@@ -97,22 +97,22 @@ router.post("/schedule-interview", async (req, res) => {
       source: "hr_interview",
       summary: `Interview scheduled for ${role}`,
       rawResult: result,
-      phone: req.body.phone || null,
+      phone: phone || null,
       position: role.trim(),
-      location: req.body.location || null,
-      experience: req.body.experience || null,
-      education: req.body.education || null,
+      location: location || null,
+      experience: experience || null,
+      education: education || null,
       status: "interview_scheduled",
-      interviewDate: req.body.interviewDate || null,
-      meetLink: req.body.meetLink || null,
-      notes: req.body.notes || null,
+      interviewDate: interviewDate || null,
+      meetLink: meetLink || null,
+      notes: notes || null,
     }).catch((e) => console.error("DB save error:", e.message));
 
     // Log activity
     ActivityLog.create({
       type: "schedule",
       action: "Interview Scheduled",
-      detail: `${name.trim()} — ${req.body.interviewDate || "TBD"}`,
+      detail: `${name.trim()} — ${interviewDate || "TBD"}`,
       candidateId: candidate?._id || null,
     }).catch((e) => console.error("Activity log error:", e.message));
 
@@ -126,7 +126,7 @@ router.post("/schedule-interview", async (req, res) => {
 // STAGE 3: Hire candidate (after interview accepted)
 router.post("/hire", async (req, res) => {
   try {
-    const { name, email, role, salary, startDate } = req.body;
+    const { name, email, role, salary, startDate, phone, location, experience, education, notes } = req.body;
 
     if (!name || !email || !role) {
       return res.status(400).json({ error: "name, email, role are required" });
@@ -150,13 +150,13 @@ router.post("/hire", async (req, res) => {
       source: "hr_hire",
       summary: `Hired for ${role}`,
       rawResult: result,
-      phone: req.body.phone || null,
+      phone: phone || null,
       position: role.trim(),
-      location: req.body.location || null,
-      experience: req.body.experience || null,
-      education: req.body.education || null,
+      location: location || null,
+      experience: experience || null,
+      education: education || null,
       status: "hired",
-      notes: req.body.notes || null,
+      notes: notes || null,
     }).catch((e) => console.error("DB save error:", e.message));
 
     // Log activity
@@ -176,7 +176,7 @@ router.post("/hire", async (req, res) => {
 
 router.post("/reject", async (req, res) => {
   try {
-    const { name, email, role } = req.body;
+    const { name, email, role, phone, location, experience, education, notes } = req.body;
 
     if (!name || !email || !role) {
       return res.status(400).json({ error: "name, email, role are required" });
@@ -197,13 +197,13 @@ router.post("/reject", async (req, res) => {
       source: "hr_reject",
       summary: `Rejected for ${role}`,
       rawResult: result,
-      phone: req.body.phone || null,
+      phone: phone || null,
       position: role.trim(),
-      location: req.body.location || null,
-      experience: req.body.experience || null,
-      education: req.body.education || null,
+      location: location || null,
+      experience: experience || null,
+      education: education || null,
       status: "rejected",
-      notes: req.body.notes || null,
+      notes: notes || null,
     }).catch((e) => console.error("DB save error:", e.message));
 
     // Log activity
