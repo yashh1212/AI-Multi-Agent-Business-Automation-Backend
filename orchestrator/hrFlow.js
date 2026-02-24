@@ -164,3 +164,31 @@ HR Team - ${process.env.COMPANY_NAME}
   console.log("🎉 Onboarding plan sent");
   return { status: "hired", ...result };
 }
+
+// ═══════════════════════════════════════
+// STAGE X: Manual Rejection
+// POST /hr/reject
+// ═══════════════════════════════════════
+export async function runRejectionFlow(candidate) {
+  console.log(`\n❌ Processing rejection for: ${candidate.name}`);
+  // Send rejection email
+  await sendEmail({
+    to: candidate.email,
+    subject: `Application Update - ${candidate.role}`,
+    body: `
+Dear ${candidate.name},
+
+Thank you for your interest in the ${candidate.role} role at ${process.env.COMPANY_NAME}.
+
+After careful consideration, we will not be moving forward with your application at this time.
+
+We appreciate you taking the time to apply and wish you the best in your job search.
+
+Best regards,
+HR Team - ${process.env.COMPANY_NAME}
+    `.trim(),
+  });
+
+  console.log("❌ Rejection email sent");
+  return { status: "rejected", candidate };
+}

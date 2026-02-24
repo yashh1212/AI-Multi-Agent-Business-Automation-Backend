@@ -3,9 +3,11 @@ import {
   runScreeningFlow,
   runInterviewFlow,
   runHiringFlow,
+  runRejectionFlow
 } from "../orchestrator/hrFlow.js";
 import multer from "multer";
 import Candidate from "../models/Candidate.js";
+import ActivityLog from "../models/ActivityLog.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -37,7 +39,7 @@ router.post("/apply", upload.single("resume"), async (req, res) => {
     });
 
     // Save candidate screening to DB
-    Candidate.create({
+    const candidate = await Candidate.create({
       candidateName: name.trim(),
       email: email.trim(),
       jobRole: role.trim(),
@@ -47,7 +49,23 @@ router.post("/apply", upload.single("resume"), async (req, res) => {
       source: "hr_apply",
       summary: result.summary || `Applied for ${role}`,
       rawResult: result,
+      phone: req.body.phone || null,
+      position: role.trim(),
+      location: req.body.location || null,
+      experience: req.body.experience || null,
+      education: req.body.education || null,
+      resumeScore: result.score ?? result.atsScore ?? null,
+      status: "applied",
+      notes: req.body.notes || null,
     }).catch((e) => console.error("DB save error:", e.message));
+
+    // Log activity
+    ActivityLog.create({
+      type: "apply",
+      action: "Application Received",
+      detail: `${name.trim()} applied for ${role.trim()}`,
+      candidateId: candidate?._id || null,
+    }).catch((e) => console.error("Activity log error:", e.message));
 
     res.json({ success: true, result });
   } catch (err) {
@@ -72,14 +90,31 @@ router.post("/schedule-interview", async (req, res) => {
     });
 
     // Save interview scheduling to DB
-    Candidate.create({
+    const candidate = await Candidate.create({
       candidateName: name.trim(),
       email: email.trim(),
       jobRole: role.trim(),
       source: "hr_interview",
       summary: `Interview scheduled for ${role}`,
       rawResult: result,
+      phone: req.body.phone || null,
+      position: role.trim(),
+      location: req.body.location || null,
+      experience: req.body.experience || null,
+      education: req.body.education || null,
+      status: "interview_scheduled",
+      interviewDate: req.body.interviewDate || null,
+      meetLink: req.body.meetLink || null,
+      notes: req.body.notes || null,
     }).catch((e) => console.error("DB save error:", e.message));
+
+    // Log activity
+    ActivityLog.create({
+      type: "schedule",
+      action: "Interview Scheduled",
+      detail: `${name.trim()} — ${req.body.interviewDate || "TBD"}`,
+      candidateId: candidate?._id || null,
+    }).catch((e) => console.error("Activity log error:", e.message));
 
     res.json({ success: true, result });
   } catch (err) {
@@ -107,7 +142,7 @@ router.post("/hire", async (req, res) => {
     });
 
     // Save hiring decision to DB
-    Candidate.create({
+    const candidate = await Candidate.create({
       candidateName: name.trim(),
       email: email.trim(),
       jobRole: role.trim(),
@@ -115,7 +150,22 @@ router.post("/hire", async (req, res) => {
       source: "hr_hire",
       summary: `Hired for ${role}`,
       rawResult: result,
+      phone: req.body.phone || null,
+      position: role.trim(),
+      location: req.body.location || null,
+      experience: req.body.experience || null,
+      education: req.body.education || null,
+      status: "hired",
+      notes: req.body.notes || null,
     }).catch((e) => console.error("DB save error:", e.message));
+
+    // Log activity
+    ActivityLog.create({
+      type: "hire",
+      action: "Candidate Hired",
+      detail: `${name.trim()} — Offer letter + onboarding plan sent`,
+      candidateId: candidate?._id || null,
+    }).catch((e) => console.error("Activity log error:", e.message));
 
     res.json({ success: true, result });
   } catch (err) {
@@ -139,7 +189,7 @@ router.post("/reject", async (req, res) => {
     });
 
     // Save rejection to DB
-    Candidate.create({
+    const candidate = await Candidate.create({
       candidateName: name.trim(),
       email: email.trim(),
       jobRole: role.trim(),
@@ -147,7 +197,22 @@ router.post("/reject", async (req, res) => {
       source: "hr_reject",
       summary: `Rejected for ${role}`,
       rawResult: result,
+      phone: req.body.phone || null,
+      position: role.trim(),
+      location: req.body.location || null,
+      experience: req.body.experience || null,
+      education: req.body.education || null,
+      status: "rejected",
+      notes: req.body.notes || null,
     }).catch((e) => console.error("DB save error:", e.message));
+
+    // Log activity
+    ActivityLog.create({
+      type: "reject",
+      action: "Candidate Rejected",
+      detail: `${name.trim()} — ${role.trim()}`,
+      candidateId: candidate?._id || null,
+    }).catch((e) => console.error("Activity log error:", e.message));
 
     res.json({ success: true, result });
   } catch (err) {
@@ -155,4 +220,81 @@ router.post("/reject", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ─── GET /hr/history — Retrieve HR pipeline candidate history ───────────────────
+
+router.get("/history", async (req, res) => {
+  try {
+    const filter = {
+      source: { $in: ["hr_apply", "hr_interview", "hr_hire", "hr_reject"] },
+    };
+    if (req.query.role) filter.jobRole = req.query.role.toLowerCase();
+    if (req.query.decision) filter.decision = req.query.decision.toLowerCase();
+    if (req.query.source) filter.source = req.query.source;
+
+    const candidates = await Candidate.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(req.query.limit) || 100)
+      .lean();
+
+    res.json({
+      success: true,
+      count: candidates.length,
+      data: candidates,
+    });
+  } catch (err) {
+    console.error("HR History Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /hr/history/:id — Retrieve a single HR candidate record ────────────────
+
+router.get("/history/:id", async (req, res) => {
+  try {
+    const candidate = await Candidate.findById(req.params.id).lean();
+    if (!candidate) {
+      return res.status(404).json({ success: false, error: "Candidate not found" });
+    }
+    res.json({ success: true, data: candidate });
+  } catch (err) {
+    console.error("HR History Lookup Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /hr/logs — Retrieve activity logs ──────────────────────────────────────
+
+router.get("/logs", async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.type) filter.type = req.query.type;
+
+    const logs = await ActivityLog.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(req.query.limit) || 100)
+      .lean();
+
+    res.json({ success: true, count: logs.length, data: logs });
+  } catch (err) {
+    console.error("Activity Logs Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /hr/logs/:id — Retrieve a single activity log ──────────────────────────
+
+router.get("/logs/:id", async (req, res) => {
+  try {
+    const log = await ActivityLog.findById(req.params.id).lean();
+    if (!log) {
+      return res.status(404).json({ success: false, error: "Log not found" });
+    }
+    res.json({ success: true, data: log });
+  } catch (err) {
+    console.error("Activity Log Lookup Error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 export default router;

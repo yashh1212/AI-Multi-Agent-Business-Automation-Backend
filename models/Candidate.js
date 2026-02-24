@@ -57,6 +57,22 @@ const candidateSchema = new mongoose.Schema(
     rawResult: {
       type: mongoose.Schema.Types.Mixed,
     },
+
+    // ─── New fields matching frontend candidate shape ───
+    phone: { type: String, trim: true },
+    position: { type: String, trim: true },
+    location: { type: String, trim: true },
+    experience: { type: String, trim: true },
+    education: { type: String, trim: true },
+    resumeScore: { type: Number, min: 0, max: 100, default: null },
+    status: {
+      type: String,
+      enum: ["applied", "shortlisted", "interview_scheduled", "hired", "rejected"],
+      default: "applied",
+    },
+    notes: { type: String },
+    interviewDate: { type: String },
+    meetLink: { type: String },
   },
   {
     timestamps: true,
@@ -67,6 +83,7 @@ const candidateSchema = new mongoose.Schema(
 candidateSchema.index({ jobRole: 1, createdAt: -1 });
 candidateSchema.index({ decision: 1 });
 candidateSchema.index({ email: 1 });
+candidateSchema.index({ status: 1 });
 
 const Candidate = mongoose.model("Candidate", candidateSchema);
 
