@@ -392,7 +392,7 @@ router.get("/", async (req, res) => {
       { id: 4, name: "Slack", icon: "💬", connected: true, lastSync: "Configured", syncStatus: "synced", category: "Communication" },
       { id: 5, name: "Gemini AI", icon: "🤖", connected: true, lastSync: "Active", syncStatus: "synced", category: "AI Engine" },
       { id: 6, name: "Groq AI", icon: "⚡", connected: true, lastSync: "Active", syncStatus: "synced", category: "AI Engine" },
-      { id: 7, name: "Google Calendar", icon: "📅", connected: false, lastSync: "Never", syncStatus: "disconnected", category: "Scheduling" },
+      { id: 7, name: "Google Calendar", icon: "📅", connected: true, lastSync: "Never", syncStatus: "disconnected", category: "Scheduling" },
       { id: 8, name: "HubSpot CRM", icon: "🧲", connected: false, lastSync: "Never", syncStatus: "disconnected", category: "CRM" },
     ];
 

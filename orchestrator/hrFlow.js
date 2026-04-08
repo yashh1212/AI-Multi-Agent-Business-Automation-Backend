@@ -12,9 +12,21 @@ export async function runScreeningFlow(candidate) {
   console.log(`\n👤 Processing candidate: ${candidate.name}`);
   const result = { candidate };
 
-  // Screen resume
-  console.log("📄 Screening resume...");
-  const screening = await screenResume(candidate.resume, candidate.role);
+  // Build comprehensive candidate profile for screening
+  const candidateProfile = {
+    name: candidate.name,
+    role: candidate.role,
+    email: candidate.email,
+    resume: candidate.resume,
+    phone: candidate.phone,
+    location: candidate.location,
+    experience: candidate.experience,
+    education: candidate.education,
+  };
+
+  // Screen resume with full profile
+  console.log("📄 Screening resume with entered details...");
+  const screening = await screenResume(candidateProfile.resume, candidateProfile.role, candidateProfile);
   result.screening = screening;
   console.log(`📊 Score: ${screening.score}/100 → ${screening.decision}`);
 
@@ -48,16 +60,14 @@ HR Team - ${process.env.COMPANY_NAME}
     body: `
 Dear ${candidate.name},
 
-Great news! Your resume has been shortlisted for the ${candidate.role} position.
+We are pleased to inform you that your application for the ${candidate.role} position has been shortlisted.
 
-📊 Your Profile Score: ${screening.score}/100
-📝 Summary: ${screening.summary}
+Our HR team will reach out to you shortly to discuss the next steps in the selection process.
 
-Our HR team will be in touch shortly to schedule your interview.
-
-Best regards,
-HR Team - ${process.env.COMPANY_NAME}
-    `.trim(),
+Best regards,  
+HR Team  
+${process.env.COMPANY_NAME}
+`.trim(),
   });
 
   console.log("✅ Screening passed — Email sent");

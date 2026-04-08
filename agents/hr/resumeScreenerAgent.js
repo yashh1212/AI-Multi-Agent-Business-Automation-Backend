@@ -10,14 +10,21 @@ const SCORE_THRESHOLD = 60;
 /**
  * Screen a resume using hybrid scoring: deterministic ATS + LLM qualitative analysis.
  *
- * @param {string} resumeText - Full resume text
+ * @param {string} resumeText - Full resume text (includes both file and entered details)
  * @param {string} jobRole - Target job role
+ * @param {object} [candidateProfile] - Optional candidate profile with additional details
  * @param {object} [options] - Optional config
  * @param {string} [options.jobDescription] - Custom job description
  * @param {boolean} [options.skipLLM] - If true, return ATS-only score (no LLM call)
  * @returns {object} Comprehensive screening result
  */
-export async function screenResume(resumeText, jobRole, options = {}) {
+export async function screenResume(resumeText, jobRole, candidateProfile = {}, options = {}) {
+  // Handle case where candidateProfile is actually options (backward compatibility)
+  if (candidateProfile && typeof candidateProfile === "object" && candidateProfile.jobDescription !== undefined && !candidateProfile.resume) {
+    options = candidateProfile;
+    candidateProfile = {};
+  }
+
   // Step 1: Deterministic ATS scoring
   const atsResult = calculateATSScore(resumeText, jobRole, {
     jobDescription: options.jobDescription,
@@ -49,6 +56,16 @@ export async function screenResume(resumeText, jobRole, options = {}) {
   // Step 2: LLM qualitative analysis (with ATS context)
   const truncated = resumeText.substring(0, 4000);
 
+  // Build candidate details section if profile provided
+  const candidateDetailsSection = candidateProfile && Object.keys(candidateProfile).length > 0 ? `
+CANDIDATE PROFILE (Entered Details):
+- Name: ${candidateProfile.name || "N/A"}
+- Phone: ${candidateProfile.phone || "N/A"}
+- Location: ${candidateProfile.location || "N/A"}
+- Years of Experience: ${candidateProfile.experience || "N/A"}
+- Education: ${candidateProfile.education || "N/A"}
+` : "";
+
   const prompt = `You are an expert HR recruiter and ATS scoring specialist. Analyze this resume for the role of "${jobRole}".
 
 A deterministic ATS system has already scored this resume:
@@ -59,16 +76,18 @@ A deterministic ATS system has already scored this resume:
 - Matched Skills: ${atsResult.breakdown.skills.matchedSkills.join(", ") || "none"}
 - Missing Skills: ${atsResult.breakdown.skills.missingSkills.slice(0, 10).join(", ") || "none"}
 
+${candidateDetailsSection}
+
 Resume:
 ${truncated}
 
-Based on your expert analysis AND the ATS data above, return JSON only with:
-- score (0-100, your independent qualitative assessment)
+Based on your expert analysis, the ATS data above, AND the candidate profile provided, return JSON only with:
+- score (0-100, your independent qualitative assessment considering both resume and profile)
 - decision ("selected" or "rejected", threshold is ${SCORE_THRESHOLD})
-- strengths (array of 3 key strengths)
+- strengths (array of 3 key strengths from resume and profile)
 - weaknesses (array of 3 key weaknesses or improvement areas)
 - summary (2-3 sentence professional summary of the candidate)
-- experience_years (number, your assessment)
+- experience_years (number, your assessment from both resume and profile)
 - key_skills (array of top skills identified)
 - culture_fit_indicators (array of 2-3 soft skill or culture indicators)
 - interview_focus_areas (array of 2-3 areas to probe in interview)`;
