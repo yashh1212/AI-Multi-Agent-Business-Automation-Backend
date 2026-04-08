@@ -36,7 +36,7 @@ export async function startEmailAgent() {
         processedEmailIds.add(email.id);
       }
     } catch (err) {
-      console.error("❌ Email Agent error:", err.message);
+      console.error("❌ Email Agent error:", err);
     }
   }
 
