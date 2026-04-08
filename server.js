@@ -9,6 +9,7 @@ import hrRoutes from "./routes/hrRoutes.js";
 import atsRoutes from "./routes/atsRoutes.js";
 import salesRoutes from "./routes/salesRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
+import { startSalesAutomationAgent } from "./agents/sales/automationEngine.js";
 
 dotenv.config();
 
@@ -45,6 +46,7 @@ app.post("/api/client-query", async (req, res) => {
 
 // Connect to MongoDB, then start the server
 connectDB().then(() => {
+  startSalesAutomationAgent();
   app.listen(process.env.PORT, () => {
     console.log(`Server running on ${process.env.PORT}`);
   });

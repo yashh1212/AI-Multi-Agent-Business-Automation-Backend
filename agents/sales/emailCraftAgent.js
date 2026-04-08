@@ -9,6 +9,8 @@ const EMAIL_TEMPLATES = {
   follow_up: "a professional follow-up email (light nudge with added value)",
   follow_up_2: "a second follow-up email with a different angle, asking a question",
   follow_up_3: "a breakup/last-attempt email — final follow-up before going cold",
+  interested_details: "a personalized email for an interested lead with more details, benefits, and a clear next step",
+  closing_confirmation: "a concise sales closing email confirming the customer is ready to move forward",
   re_engagement: "a warm re-engagement email to reconnect after 90+ days of silence",
   proposal: "a professional email delivering a pricing proposal with clear CTA",
   welcome: "a warm welcome email after a closed-won deal with onboarding next steps",
@@ -38,6 +40,7 @@ Lead Information:
 ${context.followUpNumber ? `This is follow-up #${context.followUpNumber}.` : ""}
 ${context.meetingDate ? `Meeting scheduled for: ${context.meetingDate}` : ""}
 ${context.meetingLink ? `Meeting link: ${context.meetingLink}` : ""}
+${context.course ? `Course / interest focus: ${context.course}` : ""}
 ${context.proposalDetails ? `Proposal details: ${context.proposalDetails}` : ""}
 ${context.previousContext ? `Previous context: ${context.previousContext}` : ""}
 

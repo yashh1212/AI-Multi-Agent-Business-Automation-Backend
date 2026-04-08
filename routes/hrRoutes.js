@@ -13,6 +13,7 @@ const pdfParse = typeof _pdf === "function" ? _pdf : (_pdf.default ?? _pdf);
 const PDFParser = require("pdf2json");
 import Candidate from "../models/Candidate.js";
 import ActivityLog from "../models/ActivityLog.js";
+import { sendInterviewScheduledNotification } from "../integrations/slack.js";
 
 const router = express.Router();
 const upload = multer({
@@ -52,6 +53,138 @@ async function extractResumeText(req) {
 }
 
 // STAGE 1: Apply & screen resume
+// router.post("/apply", upload.single("resume"), async (req, res) => {
+//   try {
+//     const { name, email, role, salary, startDate, phone, location, experience, education, notes, resumeText } = req.body;
+
+//     // Validate required fields
+//     if (!name || !email || !role) {
+//       return res.status(400).json({ error: "name, email, role are required" });
+//     }
+
+//     // Extract resume from file if uploaded
+//     let extractedResumeText = await extractResumeText(req);
+    
+//     // Combine extracted file text and manually entered resume text
+//     const enteredResumeText = resumeText ? resumeText.trim() : "";
+//     const combinedResume = [extractedResumeText, enteredResumeText]
+//       .filter(text => text && text.trim())
+//       .join("\n\n--- Additional Details ---\n");
+
+//     // If no file uploaded but resume text provided, use it
+//     if (!extractedResumeText && !combinedResume.trim()) {
+//       return res.status(400).json({ error: "Resume is required — upload a PDF/TXT file or provide resume text" });
+//     }
+
+//     console.log("🔄 Processing application for:", email.trim());
+    
+//     const result = await runScreeningFlow({
+//       name: name.trim(),
+//       email: email.trim(),
+//       role: role.trim(),
+//       salary: salary || "To be discussed",
+//       startDate: startDate || "March 1, 2026",
+//       resume: combinedResume || extractedResumeText,
+//       phone: phone || null,
+//       location: location || null,
+//       experience: experience || null,
+//       education: education || null,
+//     });
+
+//     console.log("✅ Screening result:", {
+//       score: result.screening?.score ?? result.score,
+//       decision: result.screening?.decision || result.decision,
+//       hasSummary: !!(result.screening?.summary || result.summary),
+//     });
+
+//     // Determine status based on screening decision
+//     const screeningStatus = result.screening?.decision === "selected" ? "shortlisted" : "rejected";
+    
+//     // Extract score with fallback
+//     const finalScore = result.screening?.score ?? result.score ?? null;
+//     const finalDecision = result.screening?.decision || result.decision || null;
+//     const finalSummary = result.screening?.summary || result.summary || `Applied for ${role}`;
+
+//     console.log("💾 Saving to database with:", {
+//       email: email.trim(),
+//       score: finalScore,
+//       decision: finalDecision,
+//       status: screeningStatus,
+//     });
+
+//     // Save candidate screening to DB - Update existing or create new
+//     const candidate = await Candidate.findOneAndUpdate(
+//       { email: email.trim() },
+//       {
+//         $set: {
+//           candidateName: name.trim(),
+//           email: email.trim(),
+//           jobRole: role.trim(),
+//           position: role.trim(),
+//           phone: phone || null,
+//           location: location || null,
+//           experience: experience || null,
+//           education: education || null,
+//           score: finalScore,
+//           resumeScore: finalScore,
+//           decision: finalDecision,
+//           status: screeningStatus,
+//           summary: finalSummary,
+//           scoringMethod: result.screening?.scoring_method || result.scoring_method || "none",
+//           source: "hr_apply",
+//           updatedAt: new Date(),
+//         },
+//         $setOnInsert: {
+//           rawResult: result,
+//           notes: notes || null,
+//           createdAt: new Date(),
+//         }
+//       },
+//       { upsert: true, new: true }
+//     ).catch((e) => {
+//       console.error("❌ DB save error:", e.message);
+//       console.error("Stack:", e.stack);
+//       throw e;
+//     });
+
+//     if (!candidate) {
+//       console.error("❌ Candidate not saved (returned null)");
+//       return res.status(500).json({ error: "Failed to save candidate to database" });
+//     }
+
+//     console.log("✅ Candidate saved successfully:", {
+//       id: candidate._id,
+//       email: candidate.email,
+//       score: candidate.score,
+//       status: candidate.status,
+//     });
+
+//     // Log activity
+//     ActivityLog.create({
+//       type: "apply",
+//       action: "Application Received",
+//       detail: `${name.trim()} applied for ${role.trim()}`,
+//       candidateId: candidate?._id || null,
+//     }).catch((e) => console.error("Activity log error:", e.message));
+
+//     res.json({ 
+//       success: true, 
+//       result,
+//       saved: {
+//         candidateName: candidate.candidateName,
+//         email: candidate.email,
+//         score: candidate.score,
+//         decision: candidate.decision,
+//         status: candidate.status,
+//       }
+//     });
+//   } catch (err) {
+//     console.error("❌ Apply Error:", err.message);
+//     console.error("Stack:", err.stack);
+//     res.status(500).json({ error: err.message, type: err.name });
+//   }
+// });
+
 router.post("/apply", upload.single("resume"), async (req, res) => {
   try {
     const { name, email, role, salary, startDate, phone, location, experience, education, notes, resumeText } = req.body;
@@ -60,23 +193,37 @@ router.post("/apply", upload.single("resume"), async (req, res) => {
       return res.status(400).json({ error: "name, email, role are required" });
     }
 
-    // Extract resume from file if uploaded
+    const cleanEmail = email.trim().toLowerCase();
+
+    // 🚨 CHECK IF ALREADY EXISTS
+    const existingCandidate = await Candidate.findOne({ email: cleanEmail });
+
+    if (existingCandidate) {
+      return res.status(409).json({
+        success: false,
+        error: "Candidate already applied with this email",
+      });
+    }
+
+    // Extract resume
     let extractedResumeText = await extractResumeText(req);
-    
-    // Combine extracted file text and manually entered resume text
+
     const enteredResumeText = resumeText ? resumeText.trim() : "";
     const combinedResume = [extractedResumeText, enteredResumeText]
       .filter(text => text && text.trim())
       .join("\n\n--- Additional Details ---\n");
 
-    // If no file uploaded but resume text provided, use it
     if (!extractedResumeText && !combinedResume.trim()) {
-      return res.status(400).json({ error: "Resume is required — upload a PDF/TXT file or provide resume text" });
+      return res.status(400).json({
+        error: "Resume is required — upload a PDF/TXT file or provide resume text",
+      });
     }
+
+    console.log("🔄 Processing application for:", cleanEmail);
 
     const result = await runScreeningFlow({
       name: name.trim(),
-      email: email.trim(),
+      email: cleanEmail,
       role: role.trim(),
       salary: salary || "To be discussed",
       startDate: startDate || "March 1, 2026",
@@ -87,49 +234,64 @@ router.post("/apply", upload.single("resume"), async (req, res) => {
       education: education || null,
     });
 
-    // Determine status based on screening decision
-    const screeningStatus = result.screening?.decision === "selected" ? "shortlisted" : "rejected";
 
-    // Save candidate screening to DB - Update existing or create new
-    const candidate = await Candidate.findOneAndUpdate(
-      { email: email.trim() },
-      {
-        candidateName: name.trim(),
-        email: email.trim(),
-        jobRole: role.trim(),
-        score: result.screening?.score ?? result.score ?? null,
-        decision: result.screening?.decision || result.decision || null,
-        scoringMethod: result.screening?.scoring_method || result.scoring_method || "none",
-        source: "hr_apply",
-        summary: result.screening?.summary || result.summary || `Applied for ${role}`,
-        rawResult: result,
-        phone: phone || null,
-        position: role.trim(),
-        location: location || null,
-        experience: experience || null,
-        education: education || null,
-        resumeScore: result.screening?.score ?? result.score ?? null,
-        status: screeningStatus,
-        notes: notes || null,
-      },
-      { upsert: true, new: true }
-    ).catch((e) => console.error("DB save error:", e.message));
+    const screeningStatus =
+      result.screening?.decision === "selected" ? "shortlisted" : "rejected";
 
-    // Log activity
-    ActivityLog.create({
+    const finalScore = result.screening?.score ?? result.score ?? null;
+    const finalDecision = result.screening?.decision || result.decision || null;
+    const finalSummary =
+      result.screening?.summary || result.summary || `Applied for ${role}`;
+
+    // ✅ CREATE NEW ONLY (NO UPDATE)
+    const candidate = await Candidate.create({
+      candidateName: name.trim(),
+      email: cleanEmail,
+      jobRole: role.trim(),
+      position: role.trim(),
+      phone: phone || null,
+      location: location || null,
+      experience: experience || null,
+      education: education || null,
+      score: finalScore,
+      resumeScore: finalScore,
+      decision: finalDecision,
+      status: screeningStatus,
+      summary: finalSummary,
+      scoringMethod:
+        result.screening?.scoring_method || result.scoring_method || "none",
+      source: "hr_apply",
+      rawResult: result,
+      notes: notes || null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    console.log("✅ Candidate saved:", candidate.email);
+
+    await ActivityLog.create({
       type: "apply",
       action: "Application Received",
       detail: `${name.trim()} applied for ${role.trim()}`,
-      candidateId: candidate?._id || null,
-    }).catch((e) => console.error("Activity log error:", e.message));
+      candidateId: candidate._id,
+    });
 
-    res.json({ success: true, result });
+    res.json({
+      success: true,
+      result,
+      saved: {
+        candidateName: candidate.candidateName,
+        email: candidate.email,
+        score: candidate.score,
+        decision: candidate.decision,
+        status: candidate.status,
+      },
+    });
   } catch (err) {
-    console.error("Apply Error:", err);
+    console.error("❌ Apply Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
-
 // STAGE 2: Schedule interview (after screening passed)
 router.post("/schedule-interview", async (req, res) => {
   try {
@@ -139,46 +301,95 @@ router.post("/schedule-interview", async (req, res) => {
       return res.status(400).json({ error: "name, email, role are required" });
     }
 
+    console.log("🔄 Scheduling interview for:", email.trim());
+
     const result = await runInterviewFlow({
       name: req.body.name.trim(),
       email: req.body.email.trim(),
       role: req.body.role.trim(),
     });
 
+
+    const scheduledInterviewDate = interviewDate || result.interview?.scheduledAt || null;
+    const scheduledMeetLink = meetLink || result.interview?.meetLink || result.meetLink || null;
+    const scheduledTime = result.interview?.scheduledTime || null;
+
+    console.log("✅ Interview flow result:", {
+      hasLink: !!scheduledMeetLink,
+      status: 'interview_scheduled',
+    });
+
     // Save interview scheduling to DB - Update existing candidate
+    // Use $set to properly merge fields without losing existing data
     const candidate = await Candidate.findOneAndUpdate(
       { email: email.trim() },
       {
-        candidateName: name.trim(),
-        email: email.trim(),
-        jobRole: role.trim(),
-        source: "hr_interview",
-        summary: `Interview scheduled for ${role}`,
-        rawResult: result,
-        phone: phone || null,
-        position: role.trim(),
-        location: location || null,
-        experience: experience || null,
-        education: education || null,
-        status: "interview_scheduled",
-        interviewDate: interviewDate || null,
-        meetLink: meetLink || result.meetLink || null,
-        notes: notes || null,
+        $set: {
+          candidateName: name.trim(),
+          email: email.trim(),
+          jobRole: role.trim(),
+          position: role.trim(),
+          status: "interview_scheduled",
+          interviewDate: scheduledInterviewDate,
+          meetLink: scheduledMeetLink,
+          source: "hr_interview",
+          updatedAt: new Date(),
+        },
+        // Use $setOnInsert to preserve these on upsert only
+        $setOnInsert: {
+          summary: `Interview scheduled for ${role}`,
+          rawResult: result,
+          phone: phone || null,
+          location: location || null,
+          experience: experience || null,
+          education: education || null,
+          notes: notes || null,
+          createdAt: new Date(),
+        }
       },
       { upsert: true, new: true }
-    ).catch((e) => console.error("DB save error:", e.message));
+    ).catch((e) => {
+      console.error("❌ DB save error:", e.message);
+      throw e;
+    });
+
+    if (!candidate) {
+      console.error("❌ Candidate not saved to database");
+      return res.status(500).json({ error: "Failed to save interview scheduling" });
+    }
+
+    console.log("✅ Interview scheduled successfully:", {
+      email: candidate.email,
+      status: candidate.status,
+      interviewDate: candidate.interviewDate,
+    });
+
+    try {
+      await sendInterviewScheduledNotification({
+        candidateName: name.trim(),
+        candidateEmail: email.trim(),
+        role: role.trim(),
+        interviewDate: scheduledInterviewDate,
+        scheduledTime,
+        meetLink: scheduledMeetLink,
+      });
+      console.log("Interview Slack notification sent");
+    } catch (slackError) {
+      console.error("Interview Slack notification failed:", slackError.message);
+    }
+
 
     // Log activity
     ActivityLog.create({
       type: "schedule",
       action: "Interview Scheduled",
-      detail: `${name.trim()} — ${interviewDate || "TBD"}`,
+      detail: `${name.trim()} — ${scheduledInterviewDate || "TBD"}`,
       candidateId: candidate?._id || null,
     }).catch((e) => console.error("Activity log error:", e.message));
 
     res.json({ success: true, result });
   } catch (err) {
-    console.error("Interview Error:", err.message);
+    console.error("❌ Interview Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -192,6 +403,8 @@ router.post("/hire", async (req, res) => {
       return res.status(400).json({ error: "name, email, role are required" });
     }
 
+    console.log("🔄 Processing hire for:", email.trim());
+
     const result = await runHiringFlow({
       name: name.trim(),
       email: email.trim(),
@@ -201,27 +414,55 @@ router.post("/hire", async (req, res) => {
       resume: req.body.resumeText || "Experienced professional",
     });
 
+    console.log("✅ Hiring flow result:", {
+      offerGenerated: !!result.offerLetter,
+      onboardingGenerated: !!result.onboardingPlan,
+    });
+
     // Save hiring decision to DB - Update existing candidate
+    // Use $set to update status and preserve all previous screening/interview data
     const candidate = await Candidate.findOneAndUpdate(
       { email: email.trim() },
       {
-        candidateName: name.trim(),
-        email: email.trim(),
-        jobRole: role.trim(),
-        decision: "selected",
-        source: "hr_hire",
-        summary: `Hired for ${role}`,
-        rawResult: result,
-        phone: phone || null,
-        position: role.trim(),
-        location: location || null,
-        experience: experience || null,
-        education: education || null,
-        status: "hired",
-        notes: notes || null,
+        $set: {
+          candidateName: name.trim(),
+          email: email.trim(),
+          jobRole: role.trim(),
+          position: role.trim(),
+          status: "hired",
+          decision: "selected",
+          salary: salary || null,
+          startDate: startDate || null,
+          source: "hr_hire",
+          updatedAt: new Date(),
+        },
+        $setOnInsert: {
+          summary: `Hired for ${role}`,
+          rawResult: result,
+          phone: phone || null,
+          location: location || null,
+          experience: experience || null,
+          education: education || null,
+          notes: notes || null,
+          createdAt: new Date(),
+        }
       },
       { upsert: true, new: true }
-    ).catch((e) => console.error("DB save error:", e.message));
+    ).catch((e) => {
+      console.error("❌ DB save error:", e.message);
+      throw e;
+    });
+
+    if (!candidate) {
+      console.error("❌ Candidate not saved to database");
+      return res.status(500).json({ error: "Failed to save hire decision" });
+    }
+
+    console.log("✅ Candidate hired successfully:", {
+      email: candidate.email,
+      status: candidate.status,
+      salary: candidate.salary,
+    });
 
     // Log activity
     ActivityLog.create({
@@ -233,58 +474,65 @@ router.post("/hire", async (req, res) => {
 
     res.json({ success: true, result });
   } catch (err) {
-    console.error("Hire Error:", err.message);
+    console.error("❌ Hire Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 router.post("/reject", async (req, res) => {
   try {
-    const { name, email, role, phone, location, experience, education, notes } = req.body;
+    const { name, email, role } = req.body;
 
     if (!name || !email || !role) {
       return res.status(400).json({ error: "name, email, role are required" });
     }
 
+    const cleanEmail = email.trim().toLowerCase();
+
+    console.log("🔄 Processing rejection for:", cleanEmail);
+
     const result = await runRejectionFlow({
-      name:  name.trim(),
-      email: email.trim(),
-      role:  role.trim(),
+      name: name.trim(),
+      email: cleanEmail,
+      role: role.trim(),
     });
 
-    // Save rejection to DB - Update existing candidate
+    // ❌ REMOVE upsert
     const candidate = await Candidate.findOneAndUpdate(
-      { email: email.trim() },
+      { email: cleanEmail },
       {
-        candidateName: name.trim(),
-        email: email.trim(),
-        jobRole: role.trim(),
-        decision: "rejected",
-        source: "hr_reject",
-        summary: `Rejected for ${role}`,
-        rawResult: result,
-        phone: phone || null,
-        position: role.trim(),
-        location: location || null,
-        experience: experience || null,
-        education: education || null,
-        status: "rejected",
-        notes: notes || null,
+        $set: {
+          candidateName: name.trim(),
+          jobRole: role.trim(),
+          position: role.trim(),
+          status: "rejected",
+          decision: "rejected",
+          source: "hr_reject",
+          updatedAt: new Date(),
+        },
       },
-      { upsert: true, new: true }
-    ).catch((e) => console.error("DB save error:", e.message));
+      { new: true } // only return updated doc
+    );
 
-    // Log activity
-    ActivityLog.create({
+    // ✅ If not found → handle properly
+    if (!candidate) {
+      return res.status(404).json({
+        error: "Candidate not found. Cannot reject non-existing candidate.",
+      });
+    }
+
+    console.log("✅ Candidate rejected:", candidate.email);
+
+    await ActivityLog.create({
       type: "reject",
       action: "Candidate Rejected",
       detail: `${name.trim()} — ${role.trim()}`,
-      candidateId: candidate?._id || null,
-    }).catch((e) => console.error("Activity log error:", e.message));
+      candidateId: candidate._id,
+    });
 
     res.json({ success: true, result });
   } catch (err) {
-    console.error("Rejection Error:", err.message);
+    console.error("❌ Rejection Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -293,100 +541,31 @@ router.post("/reject", async (req, res) => {
 
 router.get("/candidates", async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 100;
-    const skip = parseInt(req.query.skip) || 0;
+    let filter = {
+      source: { $in: ["hr_apply", "hr_interview", "hr_hire", "hr_reject"] },
+      email: { $exists: true, $ne: "" },
+    };
 
-    // Use aggregation to get the latest record per candidate (by email)
-    // This handles cases where a candidate goes through multiple stages
-    const pipeline = [
-      {
-        $match: {
-          source: { $in: ["hr_apply", "hr_interview", "hr_hire", "hr_reject"] },
-          email: { $exists: true, $ne: "" },
-        },
-      },
-      // Optional: filter by status if provided
-      ...(req.query.status
-        ? [{ $match: { status: req.query.status } }]
-        : []),
-      // Optional: filter by job role if provided
-      ...(req.query.role
-        ? [{ $match: { jobRole: new RegExp(req.query.role, "i") } }]
-        : []),
-      // Sort by createdAt descending to get latest records first
-      { $sort: { email: 1, createdAt: -1 } },
-      // Group by email and keep the first (latest) record
-      {
-        $group: {
-          _id: "$email",
-          doc: { $first: "$$ROOT" },
-        },
-      },
-      // Replace root to get back to document structure
-      { $replaceRoot: { newRoot: "$doc" } },
-      // Sort by creation time (newest first)
-      { $sort: { createdAt: -1 } },
-      // Pagination
-      { $skip: skip },
-      { $limit: limit },
-      // Project only needed fields
-      {
-        $project: {
-          _id: 1,
-          candidateName: 1,
-          email: 1,
-          jobRole: 1,
-          phone: 1,
-          location: 1,
-          experience: 1,
-          education: 1,
-          status: 1,
-          resumeScore: 1,
-          score: 1,
-          summary: 1,
-          decision: 1,
-          interviewDate: 1,
-          meetLink: 1,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      },
-    ];
+    // Optional filters
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
 
-    const candidates = await Candidate.aggregate(pipeline).allowDiskUse(true);
+    if (req.query.role) {
+      filter.jobRole = new RegExp(req.query.role, "i");
+    }
 
-    // Rename _id to id for frontend compatibility
+    const candidates = await Candidate.find(filter)
+      .sort({ createdAt: -1 }); // latest first
+
     const formattedCandidates = candidates.map((c) => ({
-      ...c,
+      ...c._doc,
       id: c._id.toString(),
     }));
-
-    // Get total count of unique candidates (for pagination)
-    const countPipeline = [
-      {
-        $match: {
-          source: { $in: ["hr_apply", "hr_interview", "hr_hire", "hr_reject"] },
-          email: { $exists: true, $ne: "" },
-        },
-      },
-      ...(req.query.status
-        ? [{ $match: { status: req.query.status } }]
-        : []),
-      ...(req.query.role
-        ? [{ $match: { jobRole: new RegExp(req.query.role, "i") } }]
-        : []),
-      { $sort: { email: 1, createdAt: -1 } },
-      { $group: { _id: "$email" } },
-      { $count: "total" },
-    ];
-
-    const countResult = await Candidate.aggregate(countPipeline);
-    const totalCount = countResult[0]?.total || 0;
 
     res.json({
       success: true,
       count: formattedCandidates.length,
-      total: totalCount,
       data: formattedCandidates,
     });
   } catch (err) {

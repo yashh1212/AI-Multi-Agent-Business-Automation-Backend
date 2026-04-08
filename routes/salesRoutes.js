@@ -1,6 +1,7 @@
 import express from "express";
 import {
   runLeadCaptureFlow,
+  runAutonomousLeadCaptureFlow,
   runQualificationFlow,
   runOutreachFlow,
   runFollowUpFlow,
@@ -8,6 +9,8 @@ import {
   runProposalFlow,
   runObjectionFlow,
   runCloseDealFlow,
+  updateLeadLifecycleState,
+  processSalesAutomationTick,
 } from "../orchestrator/salesFlow.js";
 import Lead from "../models/Lead.js";
 import SalesLog from "../models/SalesLog.js";
@@ -32,6 +35,44 @@ router.post("/capture", async (req, res) => {
     res.json({ success: true, ...result });
   } catch (err) {
     console.error("Capture Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// AI SALES AGENT: Form submission + immediate outreach
+router.post("/agent/submit", async (req, res) => {
+  try {
+    const { name, email, course, company, phone, source, dealValue } = req.body;
+
+    if (!name || !email || !course) {
+      return res.status(400).json({ error: "name, email, and course are required" });
+    }
+
+    const result = await runAutonomousLeadCaptureFlow({
+      name,
+      email,
+      course,
+      company,
+      phone,
+      source: source || "website",
+      interest: course,
+      dealValue,
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error("Agent Submit Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// AI SALES AGENT: Manual automation tick
+router.post("/agent/automation/run", async (_req, res) => {
+  try {
+    const summary = await processSalesAutomationTick();
+    res.json({ success: true, summary });
+  } catch (err) {
+    console.error("Automation Run Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -209,6 +250,7 @@ router.get("/leads", async (req, res) => {
   try {
     const filter = {};
     if (req.query.stage) filter.stage = req.query.stage;
+    if (req.query.crmStatus) filter.crmStatus = req.query.crmStatus;
     if (req.query.source) filter.source = req.query.source;
     if (req.query.company) filter.company = new RegExp(req.query.company, "i");
 
@@ -232,6 +274,9 @@ router.get("/stats", async (req, res) => {
     // Total leads per stage
     const stageCounts = await Lead.aggregate([
       { $group: { _id: "$stage", count: { $sum: 1 }, totalValue: { $sum: "$dealValue" } } },
+    ]);
+    const crmCounts = await Lead.aggregate([
+      { $group: { _id: "$crmStatus", count: { $sum: 1 } } },
     ]);
 
     // Total pipeline value (active deals only)
@@ -269,6 +314,7 @@ router.get("/stats", async (req, res) => {
       data: {
         totalLeads,
         stageBreakdown: stageCounts,
+        crmBreakdown: crmCounts,
         activePipeline: activePipeline[0] || { totalValue: 0, count: 0 },
         closedWon,
         closedLost,
@@ -349,6 +395,27 @@ router.put("/lead/:id/stage", async (req, res) => {
   } catch (err) {
     console.error("Stage Update Error:", err.message);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// AI SALES AGENT: Manual CRM lifecycle controls for demo mode
+router.put("/lead/:id/lifecycle", async (req, res) => {
+  try {
+    const { crmStatus, reason } = req.body;
+
+    if (!crmStatus) {
+      return res.status(400).json({ error: "crmStatus is required" });
+    }
+
+    if (!["interested", "closed", "lost"].includes(crmStatus)) {
+      return res.status(400).json({ error: "crmStatus must be interested, closed, or lost" });
+    }
+
+    const result = await updateLeadLifecycleState(req.params.id, crmStatus, { reason });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error("Lifecycle Update Error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
