@@ -10,6 +10,7 @@ import atsRoutes from "./routes/atsRoutes.js";
 import salesRoutes from "./routes/salesRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import { startSalesAutomationAgent } from "./agents/sales/automationEngine.js";
+import authRoutes from "./routes/auth.js";
 
 dotenv.config();
 
@@ -21,6 +22,7 @@ app.use("/hr", hrRoutes);
 app.use("/ats", atsRoutes);
 app.use("/sales", salesRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/auth", authRoutes);
 
 app.post("/api/client-query", async (req, res) => {
   try {
@@ -42,6 +44,9 @@ app.post("/api/client-query", async (req, res) => {
       error: err.message
     });
   }
+});
+app.get("/", (req, res) => {
+  res.send("Hello from the backend server!");
 });
 
 // Connect to MongoDB, then start the server
